@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encuestas CAU - Sin instalación</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+<!-- CONFIGURACIÓN - EDITA ESTAS 2 LÍNEAS CON TUS DATOS DE SUPABASE -->
+<script>
+const SUPABASE_URL = "https://TU-PROYECTO.supabase.co"; // <-- CAMBIA ESTO
+const SUPABASE_ANON_KEY = "eyJ..."; // <-- CAMBIA ESTO
+const supabase = supabasejs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
+
+<div id="app" class="min-h-screen">
+  <!-- LOGIN -->
+  <div id="view-login" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow border p-6">
+      <h1 class="text-xl font-bold">Encuestas CAU</h1>
+      <p class="text-sm text-gray-500 mb-4">Acceso operadores y admin. Sin instalación.</p>
+      <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs mb-4" id="config-warn" style="display:none">
+        ⚠️ Edita este archivo con tu <b>SUPABASE_URL</b> y <b>ANON_KEY</b> (líneas 12-13) o no conectará.
+      </div>
+      <input id="email" type="email" placeholder="email@empresa.com" class="w-full border rounded-lg p-2.5 mb-3">
+      <input id="password" type="password" placeholder="Contraseña" class="w-full border rounded-lg p-2.5 mb-3">
+      <button onclick="login()" class="w-full bg-gray-900 text-white py-2.5 rounded-lg hover:bg-black">Entrar</button>
+      <p id="login-msg" class="text-sm text-red-600 mt-3"></p>
+      <p class="text-xs text-gray-400 mt-4">Admin: crea usuarios en Supabase → Authentication → Add user. Luego edita rol en Table Editor → profiles.</p>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="view-dash" style="display:none" class="max-w-6xl mx-auto p-4 md:p-6">
+    <header class="flex flex-wrap gap-3 items-center justify-between mb-6">
+      <div>
+        <h1 class="text-xl font-bold">Hola, <span id="user-nombre"></span> <span id="user-rol" class="text-xs bg-gray-900 text-white px-2 py-1 rounded-full ml-2"></span></h1>
+        <p class="text-sm text-gray-500"><span id="kpi-total">0</span> encuestas • Media <span id="kpi-media">-</span>/5</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-admin" onclick="showAdmin()" style="display:none" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">Panel Admin</button>
+        <button onclick="logout()" class="px-4 py-2 border rounded-lg text-sm bg-white">Salir</button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">Total</div><div class="text-2xl font-bold" id="kpi-total2">0</div></div>
+      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">Media</div><div class="text-2xl font-bold" id="kpi-media2">-</div></div>
+      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">5★</div><div class="text-2xl font-bold text-emerald-600" id="kpi-5">0</div></div>
+      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">1-2★</div><div class="text-2xl font-bold text-red-600" id="kpi-bad">0</div></div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4 mb-6">
+      <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Distribución</h3><canvas id="chart-bars" height="180"></canvas></div>
+      <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Evolución (últimos 14 días)</h3><canvas id="chart-line" height="180"></canvas></div>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-1 bg-white rounded-xl border p-5">
+        <h2 class="font-semibold mb-1">Añadir encuestas</h2>
+        <p class="text-xs text-gray-500 mb-3">Pega tal cual de WhatsApp: <code class="bg-gray-100 px-1 rounded">CAU 31/8/2026 09:15 5</code>. Varias líneas a la vez.</p>
+        <textarea id="paste" rows="6" placeholder="CAU&#9;31/8/2026&#9;09:15&#9;5&#10;CAU&#9;31/8/2026&#9;09:22&#9;4" class="w-full border rounded-lg p-3 font-mono text-sm"></textarea>
+        <div class="flex gap-2 mt-3">
+          <button onclick="preview()" class="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm">Previsualizar</button>
+          <button onclick="document.getElementById('paste').value='';document.getElementById('preview').innerHTML=''" class="px-4 py-2 border rounded-lg text-sm">Limpiar</button>
+        </div>
+        <div id="preview" class="mt-4"></div>
+        <div id="save-msg" class="mt-3 text-sm"></div>
+      </div>
+      <div class="lg:col-span-2 bg-white rounded-xl border p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-semibold">Últimas encuestas</h2>
+          <button onclick="loadData()" class="text-xs border px-3 py-1 rounded-lg">Actualizar</button>
+        </div>
+        <div class="overflow-auto max-h-[420px]">
+          <table class="w-full text-sm">
+            <thead class="text-gray-500 border-b sticky top-0 bg-white"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN -->
+  <div id="view-admin" style="display:none" class="max-w-7xl mx-auto p-4 md:p-6">
+    <h1 class="text-xl font-bold">Panel Admin</h1>
+    <p class="text-sm text-gray-500 mb-4">Filtros, resumen y exportación</p>
+    <div class="bg-white p-4 rounded-xl border mb-4 grid md:grid-cols-6 gap-3">
+      <select id="f-operador" class="border rounded-lg p-2 text-sm"><option value="todos">Todos operadores</option></select>
+      <select id="f-valor" class="border rounded-lg p-2 text-sm"><option value="todos">Todas valoraciones</option><option value="5">5</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1</option></select>
+      <input id="f-desde" type="date" class="border rounded-lg p-2 text-sm">
+      <input id="f-hasta" type="date" class="border rounded-lg p-2 text-sm">
+      <input id="f-chat" placeholder="Chat ej: CAU" class="border rounded-lg p-2 text-sm">
+      <button onclick="exportar()" class="bg-emerald-600 text-white rounded-lg text-sm px-4">Exportar Excel</button>
+    </div>
+    <div class="flex gap-4 text-sm mb-3"><span>Total filtrado: <b id="admin-total">0</b></span><span>Media: <b id="admin-media">-</b></span><button onclick="applyFilters()" class="ml-auto border px-3 py-1 rounded-lg text-xs">Aplicar filtros</button></div>
+    <div id="admin-resumen" class="grid md:grid-cols-3 gap-3 mb-4"></div>
+    <div class="bg-white rounded-xl border overflow-auto max-h-[500px]">
+      <table class="w-full text-sm"><thead class="bg-gray-50 sticky top-0"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th><th class="p-2 text-left">Operador</th></tr></thead><tbody id="admin-tbody"></tbody></table>
+    </div>
+    <button onclick="showDash()" class="mt-4 text-sm text-blue-600">← Volver</button>
+  </div>
+</div>
+
+<script>
+let currentUser=null, profile=null, encuestas=[], filtered=[], barChart=null, lineChart=null;
+
+if (SUPABASE_URL.includes("TU-PROYECTO")) document.getElementById('config-warn').style.display='block';
+
+async function login(){
+  const email=document.getElementById('email').value.trim();
+  const password=document.getElementById('password').value;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if(error){ document.getElementById('login-msg').textContent=error.message; return; }
+  await afterLogin();
+}
+async function afterLogin(){
+  const { data:{user} } = await supabase.auth.getUser();
+  if(!user) return;
+  currentUser=user;
+  const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  profile=data;
+  document.getElementById('user-nombre').textContent=profile?.nombre || user.email;
+  document.getElementById('user-rol').textContent=profile?.role || 'operador';
+  document.getElementById('view-login').style.display='none';
+  document.getElementById('view-dash').style.display='block';
+  if(profile?.role==='admin') document.getElementById('btn-admin').style.display='inline-block';
+  await loadData();
+}
+async function loadData(){
+  let q = supabase.from('encuestas').select('*').order('fecha',{ascending:false}).order('hora',{ascending:false}).limit(500);
+  // RLS ya filtra si es operador, pero por si acaso
+  const { data, error } = await q;
+  if(error){ alert(error.message); return; }
+  encuestas=data||[];
+  renderDash();
+  if(profile?.role==='admin') await loadAdminData();
+}
+function renderDash(){
+  const total=encuestas.length;
+  const media=total? (encuestas.reduce((a,b)=>a+b.valoracion,0)/total).toFixed(2) : '-';
+  document.getElementById('kpi-total').textContent=total;
+  document.getElementById('kpi-total2').textContent=total;
+  document.getElementById('kpi-media').textContent=media;
+  document.getElementById('kpi-media2').textContent=media;
+  const dist=[1,2,3,4,5].map(v=> encuestas.filter(e=>e.valoracion===v).length);
+  document.getElementById('kpi-5').textContent=dist[4];
+  document.getElementById('kpi-bad').textContent=dist[0]+dist[1];
+  // tabla
+  document.getElementById('tbody').innerHTML=encuestas.map(e=>`<tr class="border-b"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${new Date(e.fecha).toLocaleDateString('es-ES')}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold ${e.valoracion>=4?'bg-emerald-100 text-emerald-700':e.valoracion==3?'bg-yellow-100':'bg-red-100 text-red-700'}">${e.valoracion}★</span></td></tr>`).join('') || `<tr><td colspan=4 class="p-8 text-center text-gray-400">Sin datos aún</td></tr>`;
+  // charts
+  const ctx1=document.getElementById('chart-bars');
+  if(barChart) barChart.destroy();
+  barChart=new Chart(ctx1,{type:'bar',data:{labels:['1★','2★','3★','4★','5★'],datasets:[{data:dist,backgroundColor:['#ef4444','#f97316','#eab308','#22c55e','#16a34a']}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true, ticks:{precision:0}}}}});
+  const byDate=new Map();
+  encuestas.forEach(e=>{ const v=byDate.get(e.fecha)||{sum:0,count:0}; v.sum+=e.valoracion; v.count++; byDate.set(e.fecha,v);});
+  const evo=Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14).map(([d,v])=>({d:d.slice(5),m:+(v.sum/v.count).toFixed(2)}));
+  const ctx2=document.getElementById('chart-line');
+  if(lineChart) lineChart.destroy();
+  lineChart=new Chart(ctx2,{type:'line',data:{labels:evo.map(e=>e.d),datasets:[{label:'Media',data:evo.map(e=>e.m),borderColor:'#16a34a',tension:0.3}]},options:{scales:{y:{min:1,max:5}}}});
+}
+function parseInput(input){
+  const lines=input.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const rows=[];
+  for(const line of lines){
+    let parts= line.includes('\t')? line.split('\t').map(p=>p.trim()) : line.split(/\s+/);
+    if(parts.length>4){ const idx=parts.findIndex(p=>/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(p)); if(idx>0){ parts=[parts.slice(0,idx).join(' '), ...parts.slice(idx)]; } }
+    if(parts.length<4){ rows.push({error:`Formato inválido (${parts.length} cols). Ej: CAU 31/8/2026 09:15 5`, original:line}); continue; }
+    const [chat, fecha_raw, hora_raw, val_raw]=parts;
+    const fm=fecha_raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(!fm){ rows.push({error:`Fecha inválida ${fecha_raw}`, original:line}); continue; }
+    const fecha=`${fm[3]}-${fm[2].padStart(2,'0')}-${fm[1].padStart(2,'0')}`;
+    const hm=hora_raw.match(/^(\d{1,2}):(\d{2})$/); if(!hm){ rows.push({error:`Hora inválida ${hora_raw}`, original:line}); continue; }
+    const hora=`${hm[1].padStart(2,'0')}:${hm[2]}`;
+    const val=parseInt(val_raw,10); if(!(val>=1&&val<=5)){ rows.push({error:`Valoración ${val_raw} debe 1-5`, original:line}); continue; }
+    rows.push({chat_nombre:chat, fecha, fecha_raw, hora, valoracion:val, original:line});
+  }
+  return rows;
+}
+let lastParsed=[];
+function preview(){
+  const input=document.getElementById('paste').value;
+  const rows=parseInput(input);
+  lastParsed=rows;
+  const seen=new Map(); let dups=new Set();
+  rows.forEach((r,i)=>{ if(r.error) return; const k=`${r.chat_nombre}|${r.fecha}|${r.hora}`; if(seen.has(k)){ dups.add(i); dups.add(seen.get(k)); } else seen.set(k,i); });
+  document.getElementById('preview').innerHTML=`
+    <table class="w-full text-xs border rounded-lg overflow-hidden"><thead class="bg-gray-50"><tr><th class="p-1">#</th><th class="p-1 text-left">Chat</th><th class="p-1">Fecha</th><th class="p-1">Hora</th><th class="p-1">Val</th><th class="p-1">Estado</th></tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr class="${r.error?'bg-red-50':dups.has(i)?'bg-amber-50':''}"><td class="p-1">${i+1}</td><td class="p-1 font-mono">${r.chat_nombre||'-'}</td><td class="p-1">${r.fecha_raw||'-'}</td><td class="p-1">${r.hora||'-'}</td><td class="p-1 text-center">${r.valoracion||'-'}</td><td class="p-1">${r.error?`<span class="text-red-600">${r.error}</span>`:dups.has(i)?'<span class="text-amber-600">Duplicado en lote</span>':'<span class="text-emerald-600">✓</span>'}</td></tr>`).join('')}</tbody></table>
+    <button onclick="save()" class="mt-3 w-full py-2 bg-emerald-600 text-white rounded-lg text-sm">Guardar ${rows.filter(r=>!r.error&&!dups.has(rows.indexOf(r))).length} válidas</button>
+    <p class="text-xs text-gray-500 mt-1">Anti-duplicado: no se permite repetir chat+fecha+hora.</p>
+  `;
+}
+async function save(){
+  const valid=lastParsed.filter(r=>!r.error);
+  if(!valid.length) return;
+  let ok=0,dups=0;
+  const dupDetails=[];
+  for(const r of valid){
+    const { error } = await supabase.from('encuestas').insert({ chat_nombre:r.chat_nombre, fecha:r.fecha, hora:r.hora, valoracion:r.valoracion, operador_id: currentUser.id });
+    if(!error) ok++; else if(error.code==='23505'){ dups++; dupDetails.push(`${r.fecha_raw} ${r.hora}`); }
+  }
+  document.getElementById('save-msg').innerHTML = ok? `<div class="bg-emerald-50 border border-emerald-200 p-2 rounded">Guardadas ${ok}. ${dups?`Duplicadas ignoradas: ${dups} (${dupDetails.join(', ')})`:''}</div>` : `<div class="bg-red-50 border border-red-200 p-2 rounded">Todas duplicadas: ${dupDetails.join(', ')}</div>`;
+  if(ok){ document.getElementById('paste').value=''; document.getElementById('preview').innerHTML=''; await loadData(); }
+}
+async function logout(){ await supabase.auth.signOut(); location.reload(); }
+async function loadAdminData(){
+  const { data: profiles } = await supabase.from('profiles').select('*').order('created_at');
+  const sel=document.getElementById('f-operador'); sel.innerHTML='<option value="todos">Todos operadores</option>'+profiles.filter(p=>p.role==='operador').map(p=>`<option value="${p.id}">${p.nombre} (${p.email})</option>`).join('');
+  window._profiles=profiles;
+  // cargar todas encuestas para admin
+  const { data } = await supabase.from('encuestas').select('*, profiles!encuestas_operador_id_fkey(nombre,email)').order('fecha',{ascending:false}).limit(1000);
+  window._allEncuestas=data||[];
+  filtered=window._allEncuestas;
+  renderAdmin();
+}
+function applyFilters(){
+  const op=document.getElementById('f-operador').value;
+  const val=document.getElementById('f-valor').value;
+  const desde=document.getElementById('f-desde').value;
+  const hasta=document.getElementById('f-hasta').value;
+  const chat=document.getElementById('f-chat').value.toLowerCase();
+  filtered=window._allEncuestas.filter(e=>{
+    if(op!=='todos'&& e.operador_id!==op) return false;
+    if(val!=='todos'&& String(e.valoracion)!==val) return false;
+    if(desde && e.fecha < desde) return false;
+    if(hasta && e.fecha > hasta) return false;
+    if(chat && !e.chat_nombre.toLowerCase().includes(chat)) return false;
+    return true;
+  });
+  renderAdmin();
+}
+function renderAdmin(){
+  const total=filtered.length;
+  const media=total? (filtered.reduce((a,b)=>a+b.valoracion,0)/total).toFixed(2):'-';
+  document.getElementById('admin-total').textContent=total;
+  document.getElementById('admin-media').textContent=media;
+  const byOp=window._profiles.filter(p=>p.role==='operador').map(p=>{
+    const arr=filtered.filter(e=>e.operador_id===p.id);
+    return {nombre:p.nombre,email:p.email,total:arr.length, media: arr.length? (arr.reduce((a,b)=>a+b.valoracion,0)/arr.length).toFixed(2):'-'};
+  });
+  document.getElementById('admin-resumen').innerHTML=byOp.map(o=>`<div class="bg-white p-3 rounded-xl border"><div class="font-medium text-sm">${o.nombre}</div><div class="text-xs text-gray-500">${o.email}</div><div class="mt-1 text-sm">Total: <b>${o.total}</b> Media: <b>${o.media}</b></div></div>`).join('');
+  document.getElementById('admin-tbody').innerHTML=filtered.map(e=>`<tr class="border-t"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${e.fecha}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center">${e.valoracion}★</td><td class="p-2">${e.profiles?.nombre||e.operador_id.slice(0,8)}</td></tr>`).join('');
+}
+function exportar(){
+  const rows=filtered.map(e=>({Chat:e.chat_nombre,Fecha:e.fecha,Hora:e.hora,Valoracion:e.valoracion,Operador:e.profiles?.nombre||e.operador_id,Email:e.profiles?.email||''}));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Encuestas');
+  XLSX.writeFile(wb, `encuestas-cau-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function showAdmin(){ document.getElementById('view-dash').style.display='none'; document.getElementById('view-admin').style.display='block'; }
+function showDash(){ document.getElementById('view-admin').style.display='none'; document.getElementById('view-dash').style.display='block'; }
+// auto-login si sesión activa
+supabase.auth.getSession().then(({data})=>{ if(data.session) afterLogin(); });
+</script>
+</body>
+</html>
