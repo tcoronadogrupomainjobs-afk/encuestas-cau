@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Encuestas CAU - DEMO interactiva (sin instalar, sin Supabase)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23116a34a%22/><text x=%2250%22 y=%2258%22 text-anchor=%22middle%22 font-size=%2260%22>📋</text></svg>">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
@@ -120,9 +121,16 @@
     <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">1-2★</div><div class="text-2xl font-bold text-red-600" id="kpi-bad">0</div></div>
   </div>
 
+  <div class="flex justify-end mb-2">
+    <label class="text-xs flex items-center gap-2">Rango evolución:
+      <select id="rango-evo" onchange="rangoEvo=parseInt(this.value); renderDash();" class="border rounded-lg px-2 py-1 text-xs">
+        <option value="7">7 días</option><option value="14">14 días</option><option value="30" selected>30 días</option><option value="90">90 días</option>
+      </select>
+    </label>
+  </div>
   <div class="grid md:grid-cols-2 gap-4 mb-6">
     <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Distribución</h3><canvas id="chart-bars" height="180"></canvas></div>
-    <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Evolución (últimos 14 días)</h3><canvas id="chart-line" height="180"></canvas></div>
+    <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2" id="evo-title">Evolución (últimos 30 días)</h3><canvas id="chart-line" height="180"></canvas></div>
   </div>
 
   <div id="dash-main-grid" class="grid lg:grid-cols-3 gap-6">
@@ -146,7 +154,7 @@
       <div class="flex justify-between items-center mb-3"><h2 class="font-semibold">Últimas encuestas</h2><span class="text-xs text-gray-400" id="scope-label"></span></div>
       <div class="overflow-auto max-h-[420px]">
         <table class="w-full text-sm">
-          <thead class="text-gray-500 border-b sticky top-0 bg-white"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th><th class="p-2 text-left">Obs.</th><th class="p-2 text-left">Operador</th></tr></thead>
+          <thead class="text-gray-500 border-b sticky top-0 bg-white"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th><th class="p-2 text-left">Obs.</th><th class="p-2 text-left">Operador</th><th class="p-2" id="th-accion-demo" style="display:none">Acción</th></tr></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
@@ -204,11 +212,13 @@ function seedIfEmpty(){
 }
 seedIfEmpty();
 let barChart=null, lineChart=null, filtered=[];
+let rangoEvo=30;
 let expandedObs=new Set();
 function toggleObs(id){ if(expandedObs.has(id)) expandedObs.delete(id); else expandedObs.add(id); renderDash(); }
 let editingObsId=null, editingObsText="";
 function startEditObs(id, current){ editingObsId=id; editingObsText=current||""; renderDash(); }
 function cancelEditObs(){ editingObsId=null; editingObsText=""; renderDash(); }
+function borrarDemo(id){ if(!confirm('¿Eliminar esta encuesta?')) return; let all=getEncuestas(); all=all.filter(e=> e.fecha+e.hora+e.chat_nombre!==id); setEncuestas(all); renderDash(); }
 function saveObsDemo(id){
   if(editingObsText.length>2000) return alert('Máximo 1000 caracteres');
   const all=getEncuestas();
@@ -334,6 +344,7 @@ function renderDash(){
   document.getElementById('kpi-5').textContent=dist[4];
   document.getElementById('kpi-bad').textContent=dist[0]+dist[1];
   document.getElementById('scope-label').textContent = role==='admin' ? `Viendo ${total}/${allVisible.length} (filtrado)` : 'Viendo solo tus datos';
+  const thDel=document.getElementById('th-accion-demo'); if(thDel) thDel.style.display = role==='admin' ? '' : 'none';
   const info=document.getElementById('dash-filter-info');
   if(info && role==='admin'){
     const active = (document.getElementById('d-f-operador').value!=='todos' || document.getElementById('d-f-valor').value!=='todos' || document.getElementById('d-f-desde').value || document.getElementById('d-f-hasta').value || document.getElementById('d-f-chat').value);
@@ -361,14 +372,15 @@ function renderDash(){
     }
     const canEdit = role==='operador' && e.operador_id==='op1';
     const editBtn = canEdit && !isEditing ? `<button onclick="startEditObs('${id}','${(e.observaciones||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" class="ml-2 px-1.5 py-0.5 bg-blue-600 text-white rounded text-[11px]">✏️</button>` : '';
-    return `<tr class="border-b ${isEditing?'bg-yellow-50':''}"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${new Date(e.fecha).toLocaleDateString('es-ES')}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold ${e.valoracion>=4?'bg-emerald-100 text-emerald-700':e.valoracion==3?'bg-yellow-100':'bg-red-100 text-red-700'}">${e.valoracion}★</span></td><td class="p-2 max-w-[220px]"><div class="flex items-start gap-1"><div class="flex-1">${obsHtml}</div>${editBtn}</div></td><td class="p-2 text-xs">${e.operador_nombre}</td></tr>`;
-  }).join('') || `<tr><td colspan=6 class="p-8 text-center text-gray-400">Sin resultados para esos filtros</td></tr>`;
+    const delBtn = role==='admin' ? `<button onclick="borrarDemo('${id}')" class="px-2 py-1 bg-red-600 text-white rounded text-xs">🗑️</button>` : '';
+    return `<tr class="border-b ${isEditing?'bg-yellow-50':''}"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${new Date(e.fecha).toLocaleDateString('es-ES')}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold ${e.valoracion>=4?'bg-emerald-100 text-emerald-700':e.valoracion==3?'bg-yellow-100':'bg-red-100 text-red-700'}">${e.valoracion}★</span></td><td class="p-2 max-w-[220px]"><div class="flex items-start gap-1"><div class="flex-1">${obsHtml}</div>${editBtn}</div></td><td class="p-2 text-xs">${e.operador_nombre}</td><td class="p-2 text-center">${delBtn}</td></tr>`;
+  }).join('') || `<tr><td colspan=${role==='admin' ? 7 : 6} class="p-8 text-center text-gray-400">Sin resultados para esos filtros</td></tr>`;
   const ctx1=document.getElementById('chart-bars');
   if(barChart) barChart.destroy();
   barChart=new Chart(ctx1,{type:'bar',data:{labels:['1★','2★','3★','4★','5★'],datasets:[{data:dist,backgroundColor:['#ef4444','#f97316','#eab308','#22c55e','#16a34a']}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true, ticks:{precision:0}}}}});
   const byDate=new Map();
   encuestas.forEach(e=>{ const v=byDate.get(e.fecha)||{sum:0,count:0}; v.sum+=e.valoracion; v.count++; byDate.set(e.fecha,v);});
-  const evo=Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14).map(([d,v])=>({d:d.slice(5),m:+(v.sum/v.count).toFixed(2)}));
+  const evoTitle=document.getElementById('evo-title'); if(evoTitle) evoTitle.textContent=`Evolución (últimos ${rangoEvo} días)`; const evo=Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-rangoEvo).map(([d,v])=>({d:d.slice(5),m:+(v.sum/v.count).toFixed(2)}));
   const ctx2=document.getElementById('chart-line');
   if(lineChart) lineChart.destroy();
   lineChart=new Chart(ctx2,{type:'line',data:{labels:evo.map(e=>e.d),datasets:[{label:'Media',data:evo.map(e=>e.m),borderColor:'#16a34a',tension:0.3}]},options:{scales:{y:{min:1,max:5}}}});

@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { ValoracionBars, EvolucionLine } from "./DashboardCharts";
 import ObservacionCell from "./ObservacionCell";
+import { createClient } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 
 type Encuesta = { id: string; chat_nombre: string; fecha: string; hora: string; valoracion: number; observaciones?: string | null; operador_id: string; created_at?: string; profiles?: { nombre: string } };
@@ -13,8 +14,12 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
   const [fDesde, setFDesde] = useState("");
   const [fHasta, setFHasta] = useState("");
   const [fChat, setFChat] = useState("");
+  const [rango, setRango] = useState<7|14|30|90>(30);
 
-  const filtradas = useMemo(() => encuestas.filter(e => {
+  const [localEncuestas, setLocalEncuestas] = useState(encuestas);
+  useMemo(()=> setLocalEncuestas(encuestas), [encuestas]);
+
+  const filtradas = useMemo(() => localEncuestas.filter(e => {
     if (fOperador !== "todos" && e.operador_id !== fOperador) return false;
     if (fValor !== "todos" && String(e.valoracion) !== fValor) return false;
     if (fDesde && e.fecha < fDesde) return false;
@@ -25,33 +30,40 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
       if (!hay) return false;
     }
     return true;
-  }), [encuestas, fOperador, fValor, fDesde, fHasta, fChat]);
+  }), [localEncuestas, fOperador, fValor, fDesde, fHasta, fChat]);
 
   const total = filtradas.length;
   const media = total ? (filtradas.reduce((a,b)=>a+b.valoracion,0)/total).toFixed(2) : "-";
   const dist = [1,2,3,4,5].map(v => ({ valor: v, count: filtradas.filter(e=>e.valoracion===v).length }));
   const byDate = new Map<string,{sum:number,count:number}>();
   filtradas.forEach(e=>{ const c=byDate.get(e.fecha)??{sum:0,count:0}; c.sum+=e.valoracion; c.count++; byDate.set(e.fecha,c); });
-  const evolucion = Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14).map(([fecha,v])=>({ fecha: fecha.slice(5), media: +(v.sum/v.count).toFixed(2), total: v.count }));
+  const evolucion = Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-rango).map(([fecha,v])=>({ fecha: fecha.slice(5), media: +(v.sum/v.count).toFixed(2), total: v.count }));
 
-  // Resumen rápido global (sin filtrar) - va ENCIMA de filtros
-  const resumenGlobal = useMemo(()=> profiles.filter(p=>p.role==="operador").map(p=>{
-    const arr=encuestas.filter(e=>e.operador_id===p.id);
+  const resumenGlobal = useMemo(()=> profiles.filter(p=> (p.role||"").trim().toLowerCase()==="operador").map(p=>{
+    const arr=localEncuestas.filter(e=>e.operador_id===p.id);
     const totalG=arr.length;
     const mediaG=totalG ? (arr.reduce((a,b)=>a+b.valoracion,0)/totalG).toFixed(2) : "-";
     const c5=arr.filter(e=>e.valoracion===5).length;
     const c12=arr.filter(e=>e.valoracion<=2).length;
     const ult=arr.length ? arr.slice().sort((a,b)=> (b.fecha+b.hora).localeCompare(a.fecha+a.hora))[0] : null;
     return { ...p, totalG, mediaG, c5, c12, ult };
-  }), [encuestas, profiles]);
+  }), [localEncuestas, profiles]);
 
-  const porOp = profiles.filter(p=>p.role==="operador").map(p=>{
+  const porOp = profiles.filter(p=> (p.role||"").trim().toLowerCase()==="operador").map(p=>{
     const arr=filtradas.filter(e=>e.operador_id===p.id);
     return { ...p, total: arr.length, media: arr.length ? (arr.reduce((a,b)=>a+b.valoracion,0)/arr.length).toFixed(2) : "-" };
   });
 
-  const exportar = () => {
-    const rows = filtradas.map(e=>({ Chat:e.chat_nombre, Fecha:e.fecha, Hora:e.hora, Valoracion:e.valoracion, Observaciones: e.observaciones || "", Operador: profiles.find(p=>p.id===e.operador_id)?.nombre ?? e.operador_id }));
+  const exportar = async () => {
+    // Asegurar mapa de nombres: si 'profiles' no llegó (RLS/consulta), lo recuperamos del cliente
+    let listaProfiles = profiles;
+    if(!listaProfiles || listaProfiles.length===0){
+      const supabase = createClient();
+      const { data } = await supabase.from("profiles").select("id,nombre,email,role");
+      if(data) listaProfiles = data;
+    }
+    const nombreDe = (id:string) => listaProfiles.find(p=>p.id===id)?.nombre || `Desconocido (${String(id).slice(0,8)})`;
+    const rows = filtradas.map(e=>({ Chat:e.chat_nombre, Fecha:e.fecha, Hora:e.hora, Valoracion:e.valoracion, Observaciones: e.observaciones || "", Operador: nombreDe(e.operador_id) }));
     const ws=XLSX.utils.json_to_sheet(rows);
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Encuestas");
     const resumen=[{Métrica:"Total filtrado",Valor:total},{Métrica:"Media",Valor:media},...porOp.map(o=>({Métrica:`Total ${o.nombre}`,Valor:o.total}))];
@@ -60,12 +72,18 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
   };
 
   const limpiar = () => { setFOperador("todos"); setFValor("todos"); setFDesde(""); setFHasta(""); setFChat(""); };
+  const nombreOperador = (id:string) => profiles.find(p=>p.id===id)?.nombre || `Desconocido (${id.slice(0,8)})`;
 
-  const nombreOperador = (id:string) => profiles.find(p=>p.id===id)?.nombre ?? id.slice(0,8);
+  const borrar = async (id: string) => {
+    if (!confirm("¿Eliminar esta encuesta? No se puede deshacer.")) return;
+    const supabase = createClient();
+    const { error } = await supabase.from("encuestas").delete().eq("id", id);
+    if (error) { alert("Error: " + error.message); return; }
+    setLocalEncuestas(prev => prev.filter(e => e.id !== id));
+  };
 
   return (
     <>
-      {/* RESUMEN RÁPIDO POR OPERADOR - ENCIMA DE FILTROS */}
       <div className="mb-4">
         <h3 className="font-semibold text-sm mb-2">📊 Resumen rápido por operador <span className="font-normal text-gray-500">(global, sin filtrar)</span></h3>
         <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -89,7 +107,6 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
         <div className="mt-2 text-xs text-gray-400">Este resumen es global. Debajo puedes filtrar para ver detalle por fechas/valoraciones.</div>
       </div>
 
-      {/* FILTROS PRINCIPALES - AHORA EN DASHBOARD */}
       <div className="bg-white p-4 rounded-xl border mb-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-sm">🔍 Filtros principales</h3>
@@ -112,13 +129,12 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
           <input value={fChat} onChange={e=>setFChat(e.target.value)} placeholder="Buscar en chat u observaciones..." className="border rounded-lg p-2 text-sm" />
         </div>
         <div className="mt-2 flex gap-4 text-sm">
-          <span>Total filtrado: <b>{total}</b> / {encuestas.length}</span>
+          <span>Total filtrado: <b>{total}</b> / {localEncuestas.length}</span>
           <span>Media: <b>{media}/5</b></span>
           { (fOperador!=="todos"||fValor!=="todos"||fDesde||fHasta||fChat) && <span className="text-amber-600 text-xs">● Filtros activos — KPIs, gráficos y tabla reflejan lo filtrado</span> }
         </div>
       </div>
 
-      {/* RESUMEN POR OPERADOR - también filtrado */}
       {porOp.length>0 && (
         <div className="grid md:grid-cols-3 gap-3 mb-4">
           {porOp.map(o=>(
@@ -131,7 +147,6 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
         </div>
       )}
 
-      {/* KPIs FILTRADOS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="bg-white p-4 rounded-xl border"><div className="text-xs text-gray-500">Total (filtrado)</div><div className="text-2xl font-bold">{total}</div></div>
         <div className="bg-white p-4 rounded-xl border"><div className="text-xs text-gray-500">Media (filtrada)</div><div className="text-2xl font-bold">{media} <span className="text-sm font-normal">/5</span></div></div>
@@ -139,16 +154,23 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
         <div className="bg-white p-4 rounded-xl border"><div className="text-xs text-gray-500">1-2★ (filtrado)</div><div className="text-2xl font-bold text-red-600">{dist[0].count + dist[1].count}</div></div>
       </div>
 
+      <div className="flex justify-end mb-2">
+        <label className="text-xs flex items-center gap-2">Rango evolución:
+          <select value={rango} onChange={e=>setRango(Number(e.target.value) as any)} className="border rounded-lg px-2 py-1 text-xs">
+            <option value={7}>7 días</option><option value={14}>14 días</option><option value={30}>30 días</option><option value={90}>90 días</option>
+          </select>
+        </label>
+      </div>
       <div className="grid md:grid-cols-2 gap-4 mb-6">
         <ValoracionBars data={dist} />
         <EvolucionLine data={evolucion} />
       </div>
 
       <div className="bg-white rounded-xl border p-4 mb-6">
-        <h2 className="font-semibold mb-3">Últimas encuestas (filtradas)</h2>
+        <h2 className="font-semibold mb-3">Últimas encuestas (filtradas) <span className="text-xs font-normal text-gray-500">— admin puede eliminar</span></h2>
         <div className="overflow-auto max-h-[400px]">
           <table className="w-full text-sm">
-            <thead className="text-gray-500 border-b sticky top-0 bg-white"><tr><th className="p-2 text-left">Chat</th><th className="p-2">Fecha</th><th className="p-2">Hora</th><th className="p-2">Valor</th><th className="p-2 text-left">Obs.</th><th className="p-2 text-left">Operador</th></tr></thead>
+            <thead className="text-gray-500 border-b sticky top-0 bg-white"><tr><th className="p-2 text-left">Chat</th><th className="p-2">Fecha</th><th className="p-2">Hora</th><th className="p-2">Valor</th><th className="p-2 text-left">Obs.</th><th className="p-2 text-left">Operador</th><th className="p-2"></th></tr></thead>
             <tbody>
               {filtradas.slice(0,200).map(e=>(
                 <tr key={e.id} className="border-b hover:bg-gray-50">
@@ -158,9 +180,10 @@ export default function AdminDashboardFilters({ encuestas, profiles }: { encuest
                   <td className="p-2 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${e.valoracion>=4?"bg-emerald-100 text-emerald-700":e.valoracion===3?"bg-yellow-100 text-yellow-700":"bg-red-100 text-red-700"}`}>{e.valoracion}★</span></td>
                   <td className="p-2 text-xs max-w-[220px]"><ObservacionCell text={e.observaciones} /></td>
                   <td className="p-2 text-xs">{nombreOperador(e.operador_id)}</td>
+                  <td className="p-2 text-right"><button onClick={()=>borrar(e.id)} className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700">🗑️ Eliminar</button></td>
                 </tr>
               ))}
-              {filtradas.length===0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">Sin resultados para esos filtros</td></tr>}
+              {filtradas.length===0 && <tr><td colSpan={7} className="p-8 text-center text-gray-400">Sin resultados para esos filtros</td></tr>}
             </tbody>
           </table>
         </div>

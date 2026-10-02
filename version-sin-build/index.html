@@ -3,259 +3,397 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Encuestas CAU - Sin instalación</title>
+<title>Encuestas CAU - Producción</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23116a34a%22/><text x=%2250%22 y=%2258%22 text-anchor=%22middle%22 font-size=%2260%22>📋</text></svg>">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>canvas{max-width:100%}</style>
 </head>
 <body class="bg-gray-50 text-gray-900">
-<!-- CONFIGURACIÓN - EDITA ESTAS 2 LÍNEAS CON TUS DATOS DE SUPABASE -->
+<!-- CONFIGURACIÓN -->
 <script>
-const SUPABASE_URL = "https://TU-PROYECTO.supabase.co"; // <-- CAMBIA ESTO
-const SUPABASE_ANON_KEY = "eyJ..."; // <-- CAMBIA ESTO
-const supabase = supabasejs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL = "https://mjetcvrynlnfpayjramz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qZXRjdnJ5bmxuZnBheWpyYW16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMzAxMzksImV4cCI6MjEwMzgwNjEzOX0.gPgf85XgrvlLyeBWaQmYsM7oGbcGV-JJ5fqt6hPo888";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 </script>
 
-<div id="app" class="min-h-screen">
-  <!-- LOGIN -->
-  <div id="view-login" class="min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-sm bg-white rounded-2xl shadow border p-6">
-      <h1 class="text-xl font-bold">Encuestas CAU</h1>
-      <p class="text-sm text-gray-500 mb-4">Acceso operadores y admin. Sin instalación.</p>
-      <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs mb-4" id="config-warn" style="display:none">
-        ⚠️ Edita este archivo con tu <b>SUPABASE_URL</b> y <b>ANON_KEY</b> (líneas 12-13) o no conectará.
-      </div>
-      <input id="email" type="email" placeholder="email@empresa.com" class="w-full border rounded-lg p-2.5 mb-3">
-      <input id="password" type="password" placeholder="Contraseña" class="w-full border rounded-lg p-2.5 mb-3">
-      <button onclick="login()" class="w-full bg-gray-900 text-white py-2.5 rounded-lg hover:bg-black">Entrar</button>
-      <p id="login-msg" class="text-sm text-red-600 mt-3"></p>
-      <p class="text-xs text-gray-400 mt-4">Admin: crea usuarios en Supabase → Authentication → Add user. Luego edita rol en Table Editor → profiles.</p>
+<div id="view-login" class="min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-sm bg-white rounded-2xl shadow border p-6">
+    <h1 class="text-xl font-bold">Encuestas CAU</h1>
+    <p class="text-sm text-gray-500 mb-4">Acceso operadores y admin. Usuario = email</p>
+    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs mb-4" id="config-warn" style="display:none">⚠️ Configura SUPABASE_URL y ANON_KEY arriba</div>
+    <input id="email" type="email" placeholder="email@empresa.com" class="w-full border rounded-lg p-2.5 mb-3">
+    <input id="password" type="password" placeholder="Contraseña" class="w-full border rounded-lg p-2.5 mb-3">
+    <button onclick="login()" class="w-full bg-gray-900 text-white py-2.5 rounded-lg hover:bg-black">Entrar</button>
+    <p id="login-msg" class="text-sm text-red-600 mt-3"></p>
+    <p class="text-xs text-gray-400 mt-3">Admin crea usuarios en Supabase → Authentication → Add user. Luego asigna nombre/rol en Table Editor → profiles.</p>
+  </div>
+</div>
+
+<div id="view-dash" style="display:none" class="max-w-6xl mx-auto p-4 md:p-6">
+  <header class="flex flex-wrap gap-3 items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-bold">Hola, <span id="user-nombre"></span> <span id="user-rol" class="text-xs px-2 py-1 rounded-full ml-2"></span></h1>
+      <p class="text-sm text-gray-500"><span id="kpi-total">0</span> encuestas • Media <span id="kpi-media">-</span>/5</p>
+      <p id="admin-hint" style="display:none" class="text-xs text-blue-600 mt-1">→ Filtros principales debajo. Gestión de usuarios en botón azul.</p>
     </div>
+    <div class="flex gap-2">
+      <button id="btn-admin" onclick="showAdmin()" style="display:none" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold shadow">👥 Gestión usuarios</button>
+      <button onclick="logout()" class="px-4 py-2 border rounded-lg text-sm bg-white">Salir</button>
+    </div>
+  </header>
+
+  <!-- PASTE TOP - SOLO OPERADOR -->
+  <div id="dash-paste-top" style="display:none" class="mb-6 bg-gradient-to-br from-blue-50 to-white rounded-2xl border-2 border-blue-200 p-6 shadow-md">
+    <div class="flex items-start gap-3 mb-3">
+      <div class="bg-blue-600 text-white rounded-xl p-2.5">📋</div>
+      <div class="flex-1">
+        <h2 class="font-bold text-lg">Añadir encuestas</h2>
+        <p class="text-sm text-gray-600">Pega aquí lo copiado de WhatsApp: <code class="bg-white border px-1.5 py-0.5 rounded">CAU 31/8/2026 09:15 5</code> — varias líneas. Añade observación por fila (hasta 2000).</p>
+      </div>
+    </div>
+    <div class="flex gap-1 mb-2 text-xs">
+      <button onclick="fillExample(1)" class="border bg-white px-2 py-1 rounded">Ej: 1 línea</button>
+      <button onclick="fillExample(5)" class="border bg-white px-2 py-1 rounded">Ej: 5 líneas</button>
+      <button onclick="fillExample('dupe')" class="border bg-white px-2 py-1 rounded">Ej: duplicado</button>
+    </div>
+    <textarea id="paste-top" rows="5" placeholder="CAU	31/8/2026	09:15	5" class="w-full border-2 border-blue-200 rounded-xl p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"></textarea>
+    <div class="flex gap-2 mt-3">
+      <button onclick="previewTop()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 shadow">👁️ Previsualizar</button>
+      <button onclick="clearPasteTop()" class="px-4 py-2.5 border bg-white rounded-xl text-sm">Limpiar</button>
+      <span id="save-msg-top" class="ml-auto text-sm"></span>
+    </div>
+    <div id="preview-top" class="mt-4"></div>
+    <!-- compatibilidad con lógica antigua -->
+    <textarea id="paste" style="display:none"></textarea><div id="preview" style="display:none"></div><div id="save-msg" style="display:none"></div>
   </div>
 
-  <!-- DASHBOARD -->
-  <div id="view-dash" style="display:none" class="max-w-6xl mx-auto p-4 md:p-6">
-    <header class="flex flex-wrap gap-3 items-center justify-between mb-6">
-      <div>
-        <h1 class="text-xl font-bold">Hola, <span id="user-nombre"></span> <span id="user-rol" class="text-xs bg-gray-900 text-white px-2 py-1 rounded-full ml-2"></span></h1>
-        <p class="text-sm text-gray-500"><span id="kpi-total">0</span> encuestas • Media <span id="kpi-media">-</span>/5</p>
-      </div>
+  <!-- RESUMEN RÁPIDO POR OPERADOR - SOLO ADMIN -->
+  <div id="dash-resumen-global" style="display:none" class="mb-4">
+    <h3 class="font-semibold text-sm mb-2">📊 Resumen rápido por operador <span class="font-normal text-gray-500">(global, sin filtrar)</span></h3>
+    <div id="dash-resumen-grid" class="grid md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+    <div class="mt-1 text-xs text-gray-400">Global. Debajo filtra para ver detalle.</div>
+  </div>
+
+  <!-- FILTROS ADMIN -->
+  <div id="dash-filters" style="display:none" class="bg-white p-4 rounded-xl border mb-4">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-semibold text-sm">🔍 Filtros principales (afectan KPIs, gráficos y tabla)</h3>
       <div class="flex gap-2">
-        <button id="btn-admin" onclick="showAdmin()" style="display:none" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">Panel Admin</button>
-        <button onclick="logout()" class="px-4 py-2 border rounded-lg text-sm bg-white">Salir</button>
+        <button onclick="clearDashFilters()" class="text-xs border px-3 py-1 rounded-lg hover:bg-gray-50">Limpiar</button>
+        <button onclick="exportDashFiltered()" class="text-xs bg-emerald-600 text-white px-3 py-1 rounded-lg hover:bg-emerald-700">📥 Exportar filtrado</button>
       </div>
-    </header>
-
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">Total</div><div class="text-2xl font-bold" id="kpi-total2">0</div></div>
-      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">Media</div><div class="text-2xl font-bold" id="kpi-media2">-</div></div>
-      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">5★</div><div class="text-2xl font-bold text-emerald-600" id="kpi-5">0</div></div>
-      <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">1-2★</div><div class="text-2xl font-bold text-red-600" id="kpi-bad">0</div></div>
     </div>
-
-    <div class="grid md:grid-cols-2 gap-4 mb-6">
-      <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Distribución</h3><canvas id="chart-bars" height="180"></canvas></div>
-      <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Evolución (últimos 14 días)</h3><canvas id="chart-line" height="180"></canvas></div>
+    <div class="grid md:grid-cols-5 gap-3">
+      <select id="d-f-operador" onchange="renderDash()" class="border rounded-lg p-2 text-sm"><option value="todos">Todos operadores</option></select>
+      <select id="d-f-valor" onchange="renderDash()" class="border rounded-lg p-2 text-sm"><option value="todos">Todas valoraciones</option><option value="5">5 - Muy satisfecho</option><option value="4">4 - Satisfecho</option><option value="3">3 - Normal</option><option value="2">2 - Poco satisfecho</option><option value="1">1 - Nada satisfecho</option></select>
+      <input id="d-f-desde" type="date" onchange="renderDash()" class="border rounded-lg p-2 text-sm">
+      <input id="d-f-hasta" type="date" onchange="renderDash()" class="border rounded-lg p-2 text-sm">
+      <input id="d-f-chat" oninput="renderDash()" placeholder="Buscar en chat u observaciones..." class="border rounded-lg p-2 text-sm">
     </div>
+    <div class="mt-2 text-xs text-gray-500" id="dash-filter-info"></div>
+  </div>
 
-    <div class="grid lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-1 bg-white rounded-xl border p-5">
-        <h2 class="font-semibold mb-1">Añadir encuestas</h2>
-        <p class="text-xs text-gray-500 mb-3">Pega tal cual de WhatsApp: <code class="bg-gray-100 px-1 rounded">CAU 31/8/2026 09:15 5</code>. Varias líneas a la vez.</p>
-        <textarea id="paste" rows="6" placeholder="CAU&#9;31/8/2026&#9;09:15&#9;5&#10;CAU&#9;31/8/2026&#9;09:22&#9;4" class="w-full border rounded-lg p-3 font-mono text-sm"></textarea>
-        <div class="flex gap-2 mt-3">
-          <button onclick="preview()" class="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm">Previsualizar</button>
-          <button onclick="document.getElementById('paste').value='';document.getElementById('preview').innerHTML=''" class="px-4 py-2 border rounded-lg text-sm">Limpiar</button>
-        </div>
-        <div id="preview" class="mt-4"></div>
-        <div id="save-msg" class="mt-3 text-sm"></div>
-      </div>
-      <div class="lg:col-span-2 bg-white rounded-xl border p-4">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="font-semibold">Últimas encuestas</h2>
-          <button onclick="loadData()" class="text-xs border px-3 py-1 rounded-lg">Actualizar</button>
-        </div>
-        <div class="overflow-auto max-h-[420px]">
-          <table class="w-full text-sm">
-            <thead class="text-gray-500 border-b sticky top-0 bg-white"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th></tr></thead>
-            <tbody id="tbody"></tbody>
-          </table>
-        </div>
+  <!-- FILTROS OPERADOR -->
+  <div id="dash-filters-op" style="display:none" class="bg-white p-4 rounded-xl border mb-4">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-semibold text-sm">🔍 Filtros (tus encuestas)</h3>
+      <button onclick="clearDashFiltersOp()" class="text-xs border px-3 py-1 rounded-lg hover:bg-gray-50">Limpiar</button>
+    </div>
+    <div class="grid md:grid-cols-4 gap-3">
+      <select id="d-f-valor-op" onchange="renderDash()" class="border rounded-lg p-2 text-sm"><option value="todos">Todas valoraciones</option><option value="5">5 - Muy satisfecho</option><option value="4">4 - Satisfecho</option><option value="3">3 - Normal</option><option value="2">2 - Poco satisfecho</option><option value="1">1 - Nada satisfecho</option></select>
+      <input id="d-f-desde-op" type="date" onchange="renderDash()" class="border rounded-lg p-2 text-sm">
+      <input id="d-f-hasta-op" type="date" onchange="renderDash()" class="border rounded-lg p-2 text-sm">
+      <input id="d-f-texto-op" oninput="renderDash()" placeholder="Buscar en chat u observaciones..." class="border rounded-lg p-2 text-sm">
+    </div>
+    <div class="mt-2 text-xs text-gray-500" id="dash-filter-info-op"></div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">Total</div><div class="text-2xl font-bold" id="kpi-total2">0</div></div>
+    <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">Media</div><div class="text-2xl font-bold" id="kpi-media2">-</div></div>
+    <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">5★</div><div class="text-2xl font-bold text-emerald-600" id="kpi-5">0</div></div>
+    <div class="bg-white p-4 rounded-xl border"><div class="text-xs text-gray-500">1-2★</div><div class="text-2xl font-bold text-red-600" id="kpi-bad">0</div></div>
+  </div>
+
+  <div class="flex justify-end mb-2">
+    <label class="text-xs flex items-center gap-2">Rango evolución:
+      <select id="rango-evo" onchange="rangoEvo=parseInt(this.value); renderDash();" class="border rounded-lg px-2 py-1 text-xs">
+        <option value="7">7 días</option><option value="14">14 días</option><option value="30" selected>30 días</option><option value="90">90 días</option>
+      </select>
+    </label>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 mb-6">
+    <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2">Distribución</h3><canvas id="chart-bars" height="180"></canvas></div>
+    <div class="bg-white p-4 rounded-xl border"><h3 class="font-medium mb-2" id="evo-title">Evolución (últimos 30 días)</h3><canvas id="chart-line" height="180"></canvas></div>
+  </div>
+
+  <div id="dash-main-grid" class="grid grid-cols-1 gap-6">
+    <div class="bg-white rounded-xl border p-4">
+      <div class="flex justify-between items-center mb-3"><h2 class="font-semibold">Últimas encuestas</h2><span class="text-xs text-gray-400" id="scope-label"></span></div>
+      <div id="obs-msg" class="text-sm mb-2"></div>
+      <div class="overflow-auto max-h-[420px]">
+        <table class="w-full text-sm">
+          <thead class="text-gray-500 border-b sticky top-0 bg-white"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th><th class="p-2 text-left">Obs.</th><th class="p-2 text-left">Operador</th><th class="p-2" id="th-accion" style="display:none">Acción</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- ADMIN -->
-  <div id="view-admin" style="display:none" class="max-w-7xl mx-auto p-4 md:p-6">
-    <h1 class="text-xl font-bold">Panel Admin</h1>
-    <p class="text-sm text-gray-500 mb-4">Filtros, resumen y exportación</p>
-    <div class="bg-white p-4 rounded-xl border mb-4 grid md:grid-cols-6 gap-3">
-      <select id="f-operador" class="border rounded-lg p-2 text-sm"><option value="todos">Todos operadores</option></select>
-      <select id="f-valor" class="border rounded-lg p-2 text-sm"><option value="todos">Todas valoraciones</option><option value="5">5</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1</option></select>
-      <input id="f-desde" type="date" class="border rounded-lg p-2 text-sm">
-      <input id="f-hasta" type="date" class="border rounded-lg p-2 text-sm">
-      <input id="f-chat" placeholder="Chat ej: CAU" class="border rounded-lg p-2 text-sm">
-      <button onclick="exportar()" class="bg-emerald-600 text-white rounded-lg text-sm px-4">Exportar Excel</button>
+<div id="view-admin" style="display:none" class="max-w-5xl mx-auto p-4 md:p-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-bold">Panel Admin — Gestión de usuarios</h1>
+      <p class="text-sm text-gray-500">Solo gestión de usuarios. Los filtros e informes están en el dashboard principal.</p>
     </div>
-    <div class="flex gap-4 text-sm mb-3"><span>Total filtrado: <b id="admin-total">0</b></span><span>Media: <b id="admin-media">-</b></span><button onclick="applyFilters()" class="ml-auto border px-3 py-1 rounded-lg text-xs">Aplicar filtros</button></div>
-    <div id="admin-resumen" class="grid md:grid-cols-3 gap-3 mb-4"></div>
-    <div class="bg-white rounded-xl border overflow-auto max-h-[500px]">
-      <table class="w-full text-sm"><thead class="bg-gray-50 sticky top-0"><tr><th class="p-2 text-left">Chat</th><th class="p-2">Fecha</th><th class="p-2">Hora</th><th class="p-2">Valor</th><th class="p-2 text-left">Operador</th></tr></thead><tbody id="admin-tbody"></tbody></table>
+    <button onclick="showDash()" class="px-4 py-2 border rounded-lg text-sm bg-white">← Volver al dashboard</button>
+  </div>
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm mb-4">💡 Para filtrar y exportar ve al Dashboard → “🔍 Filtros principales”.</div>
+  <div class="bg-white p-4 rounded-xl border">
+    <h3 class="font-semibold mb-1">👥 Usuarios</h3>
+    <p class="text-xs text-gray-500 mb-3">Crea usuarios en Supabase → Auth → Add user. Aquí editas nombre/rol/activo. Para reset de contraseña ve a Auth → Users → ... → Reset.</p>
+    <div class="overflow-auto">
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 border-b"><tr><th class="p-2 text-left">Nombre</th><th class="p-2 text-left">Email</th><th class="p-2">Rol</th><th class="p-2">Activo</th><th class="p-2"></th></tr></thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
     </div>
-    <button onclick="showDash()" class="mt-4 text-sm text-blue-600">← Volver</button>
   </div>
 </div>
 
 <script>
 let currentUser=null, profile=null, encuestas=[], filtered=[], barChart=null, lineChart=null;
+let expandedObs=new Set(), editingObsId=null, editingObsText="";
+let rangoEvo=30;
 
 if (SUPABASE_URL.includes("TU-PROYECTO")) document.getElementById('config-warn').style.display='block';
 
 async function login(){
   const email=document.getElementById('email').value.trim();
   const password=document.getElementById('password').value;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if(error){ document.getElementById('login-msg').textContent=error.message; return; }
   await afterLogin();
 }
 async function afterLogin(){
-  const { data:{user} } = await supabase.auth.getUser();
+  const { data:{user} } = await supabaseClient.auth.getUser();
   if(!user) return;
   currentUser=user;
-  const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  const { data } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
   profile=data;
   document.getElementById('user-nombre').textContent=profile?.nombre || user.email;
-  document.getElementById('user-rol').textContent=profile?.role || 'operador';
+  const rolEl=document.getElementById('user-rol');
+  rolEl.textContent=profile?.role || 'operador';
+  rolEl.className = profile?.role==='admin' ? 'text-xs bg-blue-600 text-white px-2 py-1 rounded-full ml-2' : 'text-xs bg-gray-900 text-white px-2 py-1 rounded-full ml-2';
   document.getElementById('view-login').style.display='none';
   document.getElementById('view-dash').style.display='block';
-  if(profile?.role==='admin') document.getElementById('btn-admin').style.display='inline-block';
+  document.getElementById('btn-admin').style.display = profile?.role==='admin' ? 'inline-block' : 'none';
+  document.getElementById('admin-hint').style.display = profile?.role==='admin' ? 'block' : 'none';
+  document.getElementById('dash-filters').style.display = profile?.role==='admin' ? 'block' : 'none';
+  document.getElementById('dash-filters-op').style.display = profile?.role==='operador' ? 'block' : 'none';
+  document.getElementById('dash-resumen-global').style.display = profile?.role==='admin' ? 'block' : 'none';
+  document.getElementById('dash-paste-top').style.display = profile?.role==='operador' ? 'block' : 'none';
+  if(profile?.role==='admin'){
+    const { data: profs } = await supabaseClient.from('profiles').select('id,nombre,email,role').eq('role','operador').order('nombre');
+    const sel=document.getElementById('d-f-operador');
+    if(sel && profs) sel.innerHTML='<option value="todos">Todos operadores</option>' + profs.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
+  }
   await loadData();
 }
+async function logout(){ await supabaseClient.auth.signOut(); location.reload(); }
+let allProfilesCache=[];
 async function loadData(){
-  let q = supabase.from('encuestas').select('*').order('fecha',{ascending:false}).order('hora',{ascending:false}).limit(500);
-  // RLS ya filtra si es operador, pero por si acaso
+  let q = supabaseClient.from('encuestas').select('*').order('fecha',{ascending:false}).order('hora',{ascending:false}).limit(500);
   const { data, error } = await q;
   if(error){ alert(error.message); return; }
   encuestas=data||[];
+  // cargar mapa de operadores para mostrar nombre en vez de código
+  const { data: profs } = await supabaseClient.from('profiles').select('id,nombre,email');
+  if(profs) allProfilesCache=profs;
   renderDash();
-  if(profile?.role==='admin') await loadAdminData();
+  if(profile?.role==='admin') await loadAdminUsers();
+}
+async function loadAdminUsers(){
+  const { data } = await supabaseClient.from('profiles').select('*').order('created_at');
+  if(!data) return;
+  document.getElementById('users-tbody').innerHTML = data.map(u=>`<tr class="border-t"><td class="p-2 font-medium">${u.nombre}</td><td class="p-2">${u.email}</td><td class="p-2 text-center"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-blue-100 text-blue-700':'bg-gray-100'}">${u.role}</span></td><td class="p-2 text-center">${u.activo?'✓ Activo':'✗'}</td><td class="p-2 text-right"><span class="text-xs text-gray-400">Editar en Supabase</span></td></tr>`).join('');
+}
+function getDashFiltered(){
+  if(profile?.role==='admin'){
+    const op=document.getElementById('d-f-operador')?.value || 'todos';
+    const val=document.getElementById('d-f-valor')?.value || 'todos';
+    const desde=document.getElementById('d-f-desde')?.value || '';
+    const hasta=document.getElementById('d-f-hasta')?.value || '';
+    const q=(document.getElementById('d-f-chat')?.value || '').toLowerCase();
+    return encuestas.filter(e=>{
+      if(op!=='todos' && e.operador_id!==op) return false;
+      if(val!=='todos' && String(e.valoracion)!==val) return false;
+      if(desde && e.fecha < desde) return false;
+      if(hasta && e.fecha > hasta) return false;
+      if(q && !e.chat_nombre.toLowerCase().includes(q) && !(e.observaciones||'').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  } else {
+    const val=document.getElementById('d-f-valor-op')?.value || 'todos';
+    const desde=document.getElementById('d-f-desde-op')?.value || '';
+    const hasta=document.getElementById('d-f-hasta-op')?.value || '';
+    const q=(document.getElementById('d-f-texto-op')?.value || '').toLowerCase();
+    return encuestas.filter(e=>{
+      if(val!=='todos' && String(e.valoracion)!==val) return false;
+      if(desde && e.fecha < desde) return false;
+      if(hasta && e.fecha > hasta) return false;
+      if(q && !e.chat_nombre.toLowerCase().includes(q) && !(e.observaciones||'').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+}
+function clearDashFilters(){ ['d-f-operador','d-f-valor','d-f-desde','d-f-hasta','d-f-chat'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value= el.tagName==='SELECT' ? 'todos' : ''; }); renderDash(); }
+function clearDashFiltersOp(){ ['d-f-valor-op','d-f-desde-op','d-f-hasta-op','d-f-texto-op'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value= el.tagName==='SELECT' ? 'todos' : ''; }); renderDash(); }
+function nombreOperadorDe(id){
+  const p = allProfilesCache.find(x=>x.id===id);
+  if(p && p.nombre) return p.nombre;
+  return 'Desconocido (' + String(id||'').slice(0,8) + ')';
+}
+async function exportDashFiltered(){
+  // Asegurar que tenemos el mapa de nombres de operadores (por si aún no se ha cargado)
+  if(!allProfilesCache.length){
+    const { data: profs } = await supabaseClient.from('profiles').select('id,nombre,email');
+    if(profs) allProfilesCache=profs;
+  }
+  const rows=getDashFiltered().map(e=>({Chat:e.chat_nombre,Fecha:e.fecha,Hora:e.hora,Valoracion:e.valoracion,Observaciones:e.observaciones||'',Operador:nombreOperadorDe(e.operador_id)}));
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Encuestas'); XLSX.writeFile(wb, `encuestas-cau-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function toggleObs(id){ if(expandedObs.has(id)) expandedObs.delete(id); else expandedObs.add(id); renderDash(); }
+function startEditObs(id, current){ editingObsId=id; editingObsText=current||""; renderDash(); }
+function cancelEditObs(){ editingObsId=null; editingObsText=""; renderDash(); }
+async function saveObs(id){
+  if(editingObsText.length>2000) return alert('Máximo 2000 caracteres');
+  const { error } = await supabaseClient.from('encuestas').update({ observaciones: editingObsText.trim() || null }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  const e=encuestas.find(x=>x.id===id); if(e) e.observaciones=editingObsText.trim()||null;
+  editingObsId=null; renderDash();
+  document.getElementById('obs-msg').innerHTML='<span class="text-emerald-600">✓ Observación actualizada</span>'; setTimeout(()=>document.getElementById('obs-msg').innerHTML='',2000);
+}
+async function borrarEncuesta(id){
+  if(!confirm('¿Eliminar esta encuesta? No se puede deshacer.')) return;
+  const { error } = await supabaseClient.from('encuestas').delete().eq('id', id);
+  if(error){ alert(error.message); return; }
+  encuestas=encuestas.filter(e=>e.id!==id);
+  renderDash();
 }
 function renderDash(){
-  const total=encuestas.length;
-  const media=total? (encuestas.reduce((a,b)=>a+b.valoracion,0)/total).toFixed(2) : '-';
+  if(profile?.role==='admin'){
+    const usersMap=new Map(); encuestas.forEach(e=>{ if(!usersMap.has(e.operador_id)) usersMap.set(e.operador_id, []); usersMap.get(e.operador_id).push(e); });
+    // resumen global
+    supabaseClient.from('profiles').select('id,nombre,email,role').eq('role','operador').then(({data})=>{
+      const grid=document.getElementById('dash-resumen-grid'); if(!grid||!data) return;
+      const ops=data.filter(u=> (u.role||'').trim().toLowerCase()==='operador');
+      grid.innerHTML=ops.map(u=>{
+        const arr=encuestas.filter(e=>e.operador_id===u.id);
+        const totalG=arr.length; const mediaG=totalG ? (arr.reduce((a,b)=>a+b.valoracion,0)/totalG).toFixed(2) : '-';
+        const c5=arr.filter(e=>e.valoracion===5).length; const c12=arr.filter(e=>e.valoracion<=2).length;
+        const ult=arr.length ? arr.slice().sort((a,b)=>(b.fecha+b.hora).localeCompare(a.fecha+a.hora))[0] : null;
+        const color = Number(mediaG)>=4.5 ? 'bg-emerald-100 text-emerald-700' : Number(mediaG)>=3.5 ? 'bg-yellow-100 text-yellow-700' : totalG ? 'bg-red-100 text-red-700' : 'bg-gray-100';
+        return `<div class="bg-white p-3 rounded-xl border shadow-sm"><div class="flex justify-between items-center"><div class="font-medium text-sm truncate">${u.nombre}</div><span class="text-xs px-2 py-0.5 rounded-full ${color}">${mediaG}★</span></div><div class="text-xs text-gray-500 truncate">${u.email}</div><div class="mt-2 grid grid-cols-3 gap-2 text-xs"><div><div class="text-gray-500">Total</div><div class="font-bold text-sm">${totalG}</div></div><div><div class="text-gray-500">5★</div><div class="font-bold text-emerald-600 text-sm">${c5}</div></div><div><div class="text-gray-500">1-2★</div><div class="font-bold text-red-600 text-sm">${c12}</div></div></div><div class="mt-1 text-xs text-gray-400">${ult ? `Últ: ${new Date(ult.fecha).toLocaleDateString('es-ES')} ${ult.hora.slice(0,5)} (${ult.valoracion}★)` : 'Sin datos'}</div></div>`;
+      }).join('') || '<div class="text-sm text-gray-400">Sin operadores</div>';
+    });
+  }
+  const filtradas=getDashFiltered();
+  const total=filtradas.length; const media=total? (filtradas.reduce((a,b)=>a+b.valoracion,0)/total).toFixed(2):'-';
   document.getElementById('kpi-total').textContent=total;
   document.getElementById('kpi-total2').textContent=total;
   document.getElementById('kpi-media').textContent=media;
   document.getElementById('kpi-media2').textContent=media;
-  const dist=[1,2,3,4,5].map(v=> encuestas.filter(e=>e.valoracion===v).length);
+  const dist=[1,2,3,4,5].map(v=> filtradas.filter(e=>e.valoracion===v).length);
   document.getElementById('kpi-5').textContent=dist[4];
   document.getElementById('kpi-bad').textContent=dist[0]+dist[1];
+  document.getElementById('scope-label').textContent = profile?.role==='admin' ? `Viendo ${total}/${encuestas.length} (filtrado)` : 'Tus encuestas';
+  const info=document.getElementById('dash-filter-info');
+  if(info && profile?.role==='admin'){
+    const active = (document.getElementById('d-f-operador').value!=='todos' || document.getElementById('d-f-valor').value!=='todos' || document.getElementById('d-f-desde').value || document.getElementById('d-f-hasta').value || document.getElementById('d-f-chat').value);
+    info.textContent = active ? `● Filtros activos — mostrando ${total} de ${encuestas.length}.` : `Mostrando ${total} encuestas.`;
+  }
+  const infoOp=document.getElementById('dash-filter-info-op');
+  if(infoOp && profile?.role==='operador'){
+    const activeOp = (document.getElementById('d-f-valor-op').value!=='todos' || document.getElementById('d-f-desde-op').value || document.getElementById('d-f-hasta-op').value || document.getElementById('d-f-texto-op').value);
+    infoOp.textContent = activeOp ? `● Filtros activos — mostrando ${total} de ${encuestas.length}.` : `Mostrando ${total} encuestas.`;
+  }
+  // mostrar columna acción solo admin
+  const thAccion=document.getElementById('th-accion');
+  if(thAccion) thAccion.style.display = profile?.role==='admin' ? '' : 'none';
   // tabla
-  document.getElementById('tbody').innerHTML=encuestas.map(e=>`<tr class="border-b"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${new Date(e.fecha).toLocaleDateString('es-ES')}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold ${e.valoracion>=4?'bg-emerald-100 text-emerald-700':e.valoracion==3?'bg-yellow-100':'bg-red-100 text-red-700'}">${e.valoracion}★</span></td></tr>`).join('') || `<tr><td colspan=4 class="p-8 text-center text-gray-400">Sin datos aún</td></tr>`;
-  // charts
-  const ctx1=document.getElementById('chart-bars');
-  if(barChart) barChart.destroy();
-  barChart=new Chart(ctx1,{type:'bar',data:{labels:['1★','2★','3★','4★','5★'],datasets:[{data:dist,backgroundColor:['#ef4444','#f97316','#eab308','#22c55e','#16a34a']}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true, ticks:{precision:0}}}}});
-  const byDate=new Map();
-  encuestas.forEach(e=>{ const v=byDate.get(e.fecha)||{sum:0,count:0}; v.sum+=e.valoracion; v.count++; byDate.set(e.fecha,v);});
-  const evo=Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14).map(([d,v])=>({d:d.slice(5),m:+(v.sum/v.count).toFixed(2)}));
-  const ctx2=document.getElementById('chart-line');
-  if(lineChart) lineChart.destroy();
-  lineChart=new Chart(ctx2,{type:'line',data:{labels:evo.map(e=>e.d),datasets:[{label:'Media',data:evo.map(e=>e.m),borderColor:'#16a34a',tension:0.3}]},options:{scales:{y:{min:1,max:5}}}});
+  document.getElementById('tbody').innerHTML=filtradas.slice().reverse().map(e=>{
+    const id=e.id;
+    const isLong=(e.observaciones||'').length>40;
+    const isExpanded=expandedObs.has(id);
+    const isEditing=editingObsId===id;
+    let obsHtml;
+    if(isEditing){
+      obsHtml=`<textarea oninput="editingObsText=this.value" rows="3" maxlength="2000" class="w-full border rounded px-2 py-1 text-xs resize-y min-h-[64px]">${(editingObsText||'').replace(/</g,'&lt;')}</textarea><div class="flex gap-1 mt-1"><button onclick="saveObs('${id}')" class="px-2 py-1 bg-emerald-600 text-white rounded text-xs">Guardar</button><button onclick="cancelEditObs()" class="px-2 py-1 border rounded text-xs">X</button></div>`;
+    } else if(!e.observaciones){
+      obsHtml='<span class="text-gray-400">-</span>';
+    } else if(!isLong){
+      obsHtml=`<span class="text-xs break-words whitespace-normal">${e.observaciones}</span>`;
+    } else {
+      obsHtml=`<div class="text-xs"><div class="${isExpanded ? 'whitespace-normal break-words' : 'truncate max-w-[180px]'}">${e.observaciones}</div><button onclick="toggleObs('${id}')" class="text-[11px] text-blue-600 hover:underline">${isExpanded ? '▲ Ver menos' : '▼ Ver más'}</button></div>`;
+    }
+    const canEdit = profile?.role==='operador';
+    const editBtn = canEdit && !isEditing ? `<button onclick="startEditObs('${id}','${(e.observaciones||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" class="ml-2 px-1.5 py-0.5 bg-blue-600 text-white rounded text-[11px]">✏️</button>` : '';
+    const delBtn = profile?.role==='admin' ? `<button onclick="borrarEncuesta('${id}')" class="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700">🗑️</button>` : '';
+    const nombreOp = allProfilesCache.find(p=>p.id===e.operador_id)?.nombre || e.operador_id.slice(0,8);
+    return `<tr class="border-b ${isEditing?'bg-yellow-50':''}"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${new Date(e.fecha).toLocaleDateString('es-ES')}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold ${e.valoracion>=4?'bg-emerald-100 text-emerald-700':e.valoracion==3?'bg-yellow-100':'bg-red-100 text-red-700'}">${e.valoracion}★</span></td><td class="p-2 max-w-[220px]"><div class="flex items-start gap-1"><div class="flex-1">${obsHtml}</div>${editBtn}</div></td><td class="p-2 text-xs">${nombreOp}</td><td class="p-2 text-center">${delBtn}</td></tr>`;
+  }).join('') || `<tr><td colspan=${profile?.role==='admin' ? 7 : 6} class="p-8 text-center text-gray-400">Sin resultados</td></tr>`;
+  const ctx1=document.getElementById('chart-bars'); if(ctx1){ if(barChart) barChart.destroy(); barChart=new Chart(ctx1,{type:'bar',data:{labels:['1★','2★','3★','4★','5★'],datasets:[{data:dist,backgroundColor:['#ef4444','#f97316','#eab308','#22c55e','#16a34a']}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true, ticks:{precision:0}}}}}); }
+  const ctx2=document.getElementById('chart-line'); if(ctx2){ if(lineChart) lineChart.destroy(); const byDate=new Map(); filtradas.forEach(e=>{ const v=byDate.get(e.fecha)||{sum:0,count:0}; v.sum+=e.valoracion; v.count++; byDate.set(e.fecha,v);}); const evoTitle=document.getElementById('evo-title'); if(evoTitle) evoTitle.textContent=`Evolución (últimos ${rangoEvo} días)`; const evo=Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-rangoEvo).map(([d,v])=>({d:d.slice(5),m:+(v.sum/v.count).toFixed(2)})); lineChart=new Chart(ctx2,{type:'line',data:{labels:evo.map(e=>e.d),datasets:[{label:'Media',data:evo.map(e=>e.m),borderColor:'#16a34a',tension:0.3}]},options:{scales:{y:{min:1,max:5}}}}); }
 }
 function parseInput(input){
-  const lines=input.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  const rows=[];
+  const lines=input.split(/\r?\n/).map(l=>l.trim()).filter(Boolean); const rows=[];
   for(const line of lines){
     let parts= line.includes('\t')? line.split('\t').map(p=>p.trim()) : line.split(/\s+/);
-    if(parts.length>4){ const idx=parts.findIndex(p=>/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(p)); if(idx>0){ parts=[parts.slice(0,idx).join(' '), ...parts.slice(idx)]; } }
-    if(parts.length<4){ rows.push({error:`Formato inválido (${parts.length} cols). Ej: CAU 31/8/2026 09:15 5`, original:line}); continue; }
-    const [chat, fecha_raw, hora_raw, val_raw]=parts;
+    if(parts.length>4){ const idx=parts.findIndex(p=>/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(p)); if(idx>0){ const chat=parts.slice(0,idx).join(' '); const resto=parts.slice(idx); parts=[chat, ...resto]; } }
+    if(parts.length<4){ rows.push({error:`Formato inválido (${parts.length} cols).`, original:line}); continue; }
+    const [chat, fecha_raw, hora_raw, val_raw, ...restObs]=parts; const observaciones=restObs.join(' ').trim() || '';
     const fm=fecha_raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(!fm){ rows.push({error:`Fecha inválida ${fecha_raw}`, original:line}); continue; }
     const fecha=`${fm[3]}-${fm[2].padStart(2,'0')}-${fm[1].padStart(2,'0')}`;
     const hm=hora_raw.match(/^(\d{1,2}):(\d{2})$/); if(!hm){ rows.push({error:`Hora inválida ${hora_raw}`, original:line}); continue; }
-    const hora=`${hm[1].padStart(2,'0')}:${hm[2]}`;
-    const val=parseInt(val_raw,10); if(!(val>=1&&val<=5)){ rows.push({error:`Valoración ${val_raw} debe 1-5`, original:line}); continue; }
-    rows.push({chat_nombre:chat, fecha, fecha_raw, hora, valoracion:val, original:line});
-  }
-  return rows;
+    const hora=`${hm[1].padStart(2,'0')}:${hm[2]}`; const val=parseInt(val_raw,10); if(!(val>=1&&val<=5)){ rows.push({error:`Valoración ${val_raw} debe 1-5`, original:line}); continue; }
+    rows.push({chat_nombre:chat, fecha, fecha_raw, hora, valoracion:val, observaciones, original:line});
+  } return rows;
 }
 let lastParsed=[];
-function preview(){
-  const input=document.getElementById('paste').value;
-  const rows=parseInput(input);
-  lastParsed=rows;
+function previewTop(){
+  const input=document.getElementById('paste-top').value;
+  const rows=parseInput(input); lastParsed=rows;
   const seen=new Map(); let dups=new Set();
   rows.forEach((r,i)=>{ if(r.error) return; const k=`${r.chat_nombre}|${r.fecha}|${r.hora}`; if(seen.has(k)){ dups.add(i); dups.add(seen.get(k)); } else seen.set(k,i); });
-  document.getElementById('preview').innerHTML=`
-    <table class="w-full text-xs border rounded-lg overflow-hidden"><thead class="bg-gray-50"><tr><th class="p-1">#</th><th class="p-1 text-left">Chat</th><th class="p-1">Fecha</th><th class="p-1">Hora</th><th class="p-1">Val</th><th class="p-1">Estado</th></tr></thead>
-    <tbody>${rows.map((r,i)=>`<tr class="${r.error?'bg-red-50':dups.has(i)?'bg-amber-50':''}"><td class="p-1">${i+1}</td><td class="p-1 font-mono">${r.chat_nombre||'-'}</td><td class="p-1">${r.fecha_raw||'-'}</td><td class="p-1">${r.hora||'-'}</td><td class="p-1 text-center">${r.valoracion||'-'}</td><td class="p-1">${r.error?`<span class="text-red-600">${r.error}</span>`:dups.has(i)?'<span class="text-amber-600">Duplicado en lote</span>':'<span class="text-emerald-600">✓</span>'}</td></tr>`).join('')}</tbody></table>
-    <button onclick="save()" class="mt-3 w-full py-2 bg-emerald-600 text-white rounded-lg text-sm">Guardar ${rows.filter(r=>!r.error&&!dups.has(rows.indexOf(r))).length} válidas</button>
-    <p class="text-xs text-gray-500 mt-1">Anti-duplicado: no se permite repetir chat+fecha+hora.</p>
+  const existing=new Set(encuestas.map(e=>`${e.chat_nombre}|${e.fecha}|${e.hora}`)); let existingDups=new Set();
+  rows.forEach((r,i)=>{ if(!r.error && existing.has(`${r.chat_nombre}|${r.fecha}|${r.hora}`)) existingDups.add(i); });
+  document.getElementById('preview-top').innerHTML=`
+    <div class="overflow-auto border rounded-xl"><table class="w-full text-xs"><thead class="bg-gray-50"><tr><th class="p-1">#</th><th class="p-1 text-left">Chat</th><th class="p-1">Fecha</th><th class="p-1">Hora</th><th class="p-1">Val</th><th class="p-1 text-left">Observaciones</th><th class="p-1">Estado</th></tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr class="${r.error?'bg-red-50':dups.has(i)||existingDups.has(i)?'bg-amber-50':''}"><td class="p-1">${i+1}</td><td class="p-1 font-mono">${r.chat_nombre||'-'}</td><td class="p-1">${r.fecha_raw||'-'}</td><td class="p-1">${r.hora||'-'}</td><td class="p-1 text-center">${r.valoracion||'-'}</td><td class="p-1 min-w-[220px]">${r.error ? '<span class="text-gray-400">-</span>' : `<textarea id="obs-${i}" oninput="lastParsed[${i}].observaciones=this.value" placeholder="Opcional" maxlength="2000" rows="3" class="w-full border rounded px-2 py-1 text-xs resize-y min-h-[64px]">${(r.observaciones||'').replace(/</g,'&lt;')}</textarea>`}</td><td class="p-1">${r.error?`<span class="text-red-600">${r.error}</span>`:dups.has(i)?'<span class="text-amber-600">Duplicado</span>':existingDups.has(i)?'<span class="text-amber-600">Ya existe</span>':'<span class="text-emerald-600">✓</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <button onclick="saveTop()" class="mt-3 w-full py-2 bg-emerald-600 text-white rounded-lg text-sm">Guardar ${rows.filter((r,i)=>!r.error&&!dups.has(i)&&!existingDups.has(i)).length} válidas</button>
+    <p class="text-xs text-gray-500 mt-1">Observaciones hasta 2000, se guardan por fila.</p>
   `;
 }
-async function save(){
-  const valid=lastParsed.filter(r=>!r.error);
-  if(!valid.length) return;
-  let ok=0,dups=0;
-  const dupDetails=[];
+function clearPasteTop(){ document.getElementById('paste-top').value=''; document.getElementById('preview-top').innerHTML=''; document.getElementById('save-msg-top').innerHTML=''; }
+function fillExample(n){ const val = n===1 ? "CAU\t31/8/2026\t09:15\t5" : n===5 ? "CAU\t31/8/2026\t09:15\t5\nCAU\t31/8/2026\t09:22\t4\nCAU\t31/8/2026\t10:05\t5" : "CAU\t31/8/2026\t09:15\t5\nCAU\t31/8/2026\t09:15\t5"; document.getElementById('paste-top').value=val; previewTop(); }
+async function saveTop(){
+  const valid=lastParsed.filter(r=>!r.error); if(!valid.length) return;
+  let ok=0,dups=0; const dupDetails=[];
   for(const r of valid){
-    const { error } = await supabase.from('encuestas').insert({ chat_nombre:r.chat_nombre, fecha:r.fecha, hora:r.hora, valoracion:r.valoracion, operador_id: currentUser.id });
+    const { error } = await supabaseClient.from('encuestas').insert({ chat_nombre:r.chat_nombre, fecha:r.fecha, hora:r.hora, valoracion:r.valoracion, observaciones: (r.observaciones||'').trim() || null, operador_id: currentUser.id });
     if(!error) ok++; else if(error.code==='23505'){ dups++; dupDetails.push(`${r.fecha_raw} ${r.hora}`); }
   }
-  document.getElementById('save-msg').innerHTML = ok? `<div class="bg-emerald-50 border border-emerald-200 p-2 rounded">Guardadas ${ok}. ${dups?`Duplicadas ignoradas: ${dups} (${dupDetails.join(', ')})`:''}</div>` : `<div class="bg-red-50 border border-red-200 p-2 rounded">Todas duplicadas: ${dupDetails.join(', ')}</div>`;
-  if(ok){ document.getElementById('paste').value=''; document.getElementById('preview').innerHTML=''; await loadData(); }
-}
-async function logout(){ await supabase.auth.signOut(); location.reload(); }
-async function loadAdminData(){
-  const { data: profiles } = await supabase.from('profiles').select('*').order('created_at');
-  const sel=document.getElementById('f-operador'); sel.innerHTML='<option value="todos">Todos operadores</option>'+profiles.filter(p=>p.role==='operador').map(p=>`<option value="${p.id}">${p.nombre} (${p.email})</option>`).join('');
-  window._profiles=profiles;
-  // cargar todas encuestas para admin
-  const { data } = await supabase.from('encuestas').select('*, profiles!encuestas_operador_id_fkey(nombre,email)').order('fecha',{ascending:false}).limit(1000);
-  window._allEncuestas=data||[];
-  filtered=window._allEncuestas;
-  renderAdmin();
-}
-function applyFilters(){
-  const op=document.getElementById('f-operador').value;
-  const val=document.getElementById('f-valor').value;
-  const desde=document.getElementById('f-desde').value;
-  const hasta=document.getElementById('f-hasta').value;
-  const chat=document.getElementById('f-chat').value.toLowerCase();
-  filtered=window._allEncuestas.filter(e=>{
-    if(op!=='todos'&& e.operador_id!==op) return false;
-    if(val!=='todos'&& String(e.valoracion)!==val) return false;
-    if(desde && e.fecha < desde) return false;
-    if(hasta && e.fecha > hasta) return false;
-    if(chat && !e.chat_nombre.toLowerCase().includes(chat)) return false;
-    return true;
-  });
-  renderAdmin();
-}
-function renderAdmin(){
-  const total=filtered.length;
-  const media=total? (filtered.reduce((a,b)=>a+b.valoracion,0)/total).toFixed(2):'-';
-  document.getElementById('admin-total').textContent=total;
-  document.getElementById('admin-media').textContent=media;
-  const byOp=window._profiles.filter(p=>p.role==='operador').map(p=>{
-    const arr=filtered.filter(e=>e.operador_id===p.id);
-    return {nombre:p.nombre,email:p.email,total:arr.length, media: arr.length? (arr.reduce((a,b)=>a+b.valoracion,0)/arr.length).toFixed(2):'-'};
-  });
-  document.getElementById('admin-resumen').innerHTML=byOp.map(o=>`<div class="bg-white p-3 rounded-xl border"><div class="font-medium text-sm">${o.nombre}</div><div class="text-xs text-gray-500">${o.email}</div><div class="mt-1 text-sm">Total: <b>${o.total}</b> Media: <b>${o.media}</b></div></div>`).join('');
-  document.getElementById('admin-tbody').innerHTML=filtered.map(e=>`<tr class="border-t"><td class="p-2 font-mono">${e.chat_nombre}</td><td class="p-2 text-center">${e.fecha}</td><td class="p-2 text-center">${e.hora.slice(0,5)}</td><td class="p-2 text-center">${e.valoracion}★</td><td class="p-2">${e.profiles?.nombre||e.operador_id.slice(0,8)}</td></tr>`).join('');
-}
-function exportar(){
-  const rows=filtered.map(e=>({Chat:e.chat_nombre,Fecha:e.fecha,Hora:e.hora,Valoracion:e.valoracion,Operador:e.profiles?.nombre||e.operador_id,Email:e.profiles?.email||''}));
-  const ws=XLSX.utils.json_to_sheet(rows);
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Encuestas');
-  XLSX.writeFile(wb, `encuestas-cau-${new Date().toISOString().slice(0,10)}.xlsx`);
+  document.getElementById('save-msg-top').innerHTML = ok? `<div class="bg-emerald-50 border border-emerald-200 p-2 rounded">Guardadas ${ok}. ${dups?`Duplicadas: ${dups} (${dupDetails.join(', ')})`:''}</div>` : `<div class="bg-red-50 border border-red-200 p-2 rounded">Todas duplicadas: ${dupDetails.join(', ')}</div>`;
+  if(ok){ document.getElementById('paste-top').value=''; document.getElementById('preview-top').innerHTML=''; await loadData(); }
 }
 function showAdmin(){ document.getElementById('view-dash').style.display='none'; document.getElementById('view-admin').style.display='block'; }
-function showDash(){ document.getElementById('view-admin').style.display='none'; document.getElementById('view-dash').style.display='block'; }
-// auto-login si sesión activa
-supabase.auth.getSession().then(({data})=>{ if(data.session) afterLogin(); });
+function showDash(){ document.getElementById('view-admin').style.display='none'; document.getElementById('view-dash').style.display='block'; renderDash(); }
+supabaseClient.auth.getSession().then(({data})=>{ if(data.session) afterLogin(); });
 </script>
 </body>
 </html>

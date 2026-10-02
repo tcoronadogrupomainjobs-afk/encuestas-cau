@@ -12,6 +12,7 @@ export default function OperatorFilters({ encuestas: initial }: { encuestas: Enc
   const [fDesde, setFDesde] = useState("");
   const [fHasta, setFHasta] = useState("");
   const [fTexto, setFTexto] = useState("");
+  const [rango, setRango] = useState<7|14|30|90>(30);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editObs, setEditObs] = useState("");
   const [saving, setSaving] = useState(false);
@@ -49,7 +50,7 @@ export default function OperatorFilters({ encuestas: initial }: { encuestas: Enc
   const dist = [1,2,3,4,5].map(v => ({ valor: v, count: filtradas.filter(e=>e.valoracion===v).length }));
   const byDate = new Map<string,{sum:number,count:number}>();
   filtradas.forEach(e=>{ const c=byDate.get(e.fecha)??{sum:0,count:0}; c.sum+=e.valoracion; c.count++; byDate.set(e.fecha,c); });
-  const evolucion = Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14).map(([fecha,v])=>({ fecha: fecha.slice(5), media: +(v.sum/v.count).toFixed(2), total: v.count }));
+  const evolucion = Array.from(byDate.entries()).sort((a,b)=>a[0].localeCompare(b[0])).slice(-rango).map(([fecha,v])=>({ fecha: fecha.slice(5), media: +(v.sum/v.count).toFixed(2), total: v.count }));
 
   const limpiar = () => { setFValor("todos"); setFDesde(""); setFHasta(""); setFTexto(""); };
 
@@ -83,6 +84,13 @@ export default function OperatorFilters({ encuestas: initial }: { encuestas: Enc
         <div className="bg-white p-4 rounded-xl border"><div className="text-xs text-gray-500">1-2★</div><div className="text-2xl font-bold text-red-600">{dist[0].count + dist[1].count}</div></div>
       </div>
 
+      <div className="flex justify-end mb-2">
+        <label className="text-xs flex items-center gap-2">Rango evolución:
+          <select value={rango} onChange={e=>setRango(Number(e.target.value) as any)} className="border rounded-lg px-2 py-1 text-xs">
+            <option value={7}>7 días</option><option value={14}>14 días</option><option value={30}>30 días</option><option value={90}>90 días</option>
+          </select>
+        </label>
+      </div>
       <div className="grid md:grid-cols-2 gap-4 mb-6">
         <ValoracionBars data={dist} />
         <EvolucionLine data={evolucion} />
